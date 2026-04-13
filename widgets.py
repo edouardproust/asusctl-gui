@@ -1,7 +1,27 @@
 import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
+from enum import Enum
+from typing import Optional
 
+class StatusType(Enum):
+    SUCCESS = "success"
+    ERROR = "error"
+    INFO = "dim-label"
+
+def status_label(status_type: Optional[StatusType] = None) -> Gtk.Label:
+    lbl = Gtk.Label(label="")
+    lbl.add_css_class("caption")
+    lbl.set_halign(Gtk.Align.START)
+    if status_type:
+        lbl.add_css_class(status_type.value)
+    return lbl
+
+def show_status(lbl: Gtk.Label, message: str, status: StatusType = StatusType.SUCCESS) -> None:
+    lbl.set_text(message)
+    for s in StatusType:
+        lbl.remove_css_class(s.value)
+    lbl.add_css_class(status.value)
 
 def section_title(text):
     lbl = Gtk.Label(label=text)
@@ -24,14 +44,6 @@ def dim_label(text):
     lbl.add_css_class("caption")
     lbl.set_halign(Gtk.Align.START)
     lbl.set_wrap(True)
-    return lbl
-
-
-def status_label():
-    lbl = Gtk.Label(label="")
-    lbl.add_css_class("dim-label")
-    lbl.add_css_class("caption")
-    lbl.set_halign(Gtk.Align.START)
     return lbl
 
 

@@ -2,7 +2,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 from runner import run
-from widgets import page_title, section_title, sep, status_label, make_row, card, expert_banner
+from widgets import page_title, section_title, sep, status_label, make_row, card, expert_banner, show_status, StatusType
 
 
 def _get_limit():
@@ -30,7 +30,6 @@ class BatteryTab(Gtk.Box):
         self.append(page_title("Battery"))
         self.append(sep())
 
-        # -- Charge limit --
         self.append(section_title("Charge limit"))
 
         current = _get_limit()
@@ -51,7 +50,7 @@ class BatteryTab(Gtk.Box):
         self.scale.connect("value-changed", self._on_limit)
 
         self.limit_lbl = Gtk.Label(label=f"{current}%")
-        self.limit_lbl.set_size_request(40, -1)
+        self.limit_lbl.set_width_chars(4)
 
         limit_box.append(self.scale)
         limit_box.append(self.limit_lbl)
@@ -62,7 +61,6 @@ class BatteryTab(Gtk.Box):
 
         self.append(sep())
 
-        # -- One-shot --
         self.append(section_title("One-time full charge"))
 
         oneshot_row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -94,7 +92,6 @@ class BatteryTab(Gtk.Box):
         oneshot_row.append(self.oneshot_status)
         self.append(card(oneshot_row))
 
-        # -- EXPERT --
         self._expert_sep = sep()
         self._expert_sep.set_visible(False)
         self.append(self._expert_sep)
@@ -118,7 +115,7 @@ class BatteryTab(Gtk.Box):
             "BIOS charge mode",
             charge_mode_desc,
             combo,
-            subtitle="Advanced BIOS-level battery strategy (overrides charge limit on some models)."
+            subtitle="Advanced BIOS-level battery strategy."
         )
         self._expert_row.set_visible(False)
         self.append(self._expert_row)
@@ -128,10 +125,8 @@ class BatteryTab(Gtk.Box):
         self.append(self._expert_status)
 
         self._expert_widgets = [
-            self._expert_sep,
-            self._expert_banner,
-            self._expert_row,
-            self._expert_status,
+            self._expert_sep, self._expert_banner,
+            self._expert_row, self._expert_status,
         ]
 
     def set_expert(self, active):
@@ -142,22 +137,25 @@ class BatteryTab(Gtk.Box):
         val = int(scale.get_value())
         self.limit_lbl.set_text(f"{val}%")
         _, ok = run(f"asusctl battery limit {val}")
-        self.limit_status.set_text(f"Limit set to {val}%" if ok else "Error setting limit")
+        if ok:
+            show_status(self.limit_status, f"Limit set to {val}%")
+        else:
+            show_status(self.limit_status, "Error setting limit", StatusType.ERROR)
 
     def _on_oneshot(self, btn):
         _, ok = run("asusctl battery oneshot")
         if ok:
-            self.oneshot_status.set_text("Charging to 100% for this cycle.")
+            show_status(self.oneshot_status, "Charging to 100% for this cycle.")
             self.oneshot_btn.set_sensitive(False)
             self.oneshot_cancel_btn.set_visible(True)
         else:
-            self.oneshot_status.set_text("Error activating one-shot charge.")
+            show_status(self.oneshot_status, "Error activating one-shot charge.", StatusType.ERROR)
 
     def _on_oneshot_cancel(self, btn):
         val = int(self.scale.get_value())
         _, ok = run(f"asusctl battery limit {val}")
         if ok:
-            self.oneshot_status.set_text(f"One-shot cancelled. Limit restored to {val}%.")
+            show_status(self.oneshot_status, f"One-shot cancelled. Limit restored to {val}%.")
             self.oneshot_btn.set_sensitive(True)
             self.oneshot_cancel_btn.set_visible(False)
 
@@ -165,4 +163,7 @@ class BatteryTab(Gtk.Box):
         vals = ["0", "1", "2"]
         val = vals[combo.get_selected()]
         _, ok = run(f"asusctl armoury set charge_mode {val}")
-        self._expert_status.set_text("Charge mode updated." if ok else "Error setting charge mode.")
+        if ok:
+            show_status(self._expert_status, "Charge mode updated.")
+        else:
+            show_status(self._expert_status, "Error setting charge mode.", StatusType.ERROR)

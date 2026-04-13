@@ -2,7 +2,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 from runner import run
-from widgets import page_title, section_title, sep, status_label, make_row, card, expert_banner
+from widgets import page_title, section_title, sep, status_label, make_row, card, expert_banner, show_status, StatusType
 
 LEVELS = ["off", "low", "med", "high"]
 LEVEL_LABELS = {"off": "Off", "low": "Low", "med": "Medium", "high": "High"}
@@ -36,11 +36,7 @@ class KeyboardTab(Gtk.Box):
         self._bright_btns = {}
 
         bright_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        bright_box.set_tooltip_text(
-            "Controls keyboard backlight intensity.\n"
-            "'Off' turns the backlight completely off.\n"
-            "Lower settings reduce battery usage."
-        )
+        bright_box.set_tooltip_text("Controls keyboard backlight intensity.")
         for lvl in LEVELS:
             if group is None:
                 btn = Gtk.CheckButton(label=LEVEL_LABELS[lvl])
@@ -57,7 +53,6 @@ class KeyboardTab(Gtk.Box):
         self.bright_status = status_label()
         self.append(self.bright_status)
 
-        # -- EXPERT : aura power --
         self._exp_sep = sep()
         self._exp_sep.set_visible(False)
         self.append(self._exp_sep)
@@ -74,35 +69,16 @@ class KeyboardTab(Gtk.Box):
         self._aura_switches = {}
 
         aura_options = [
-            (
-                "awake_keyboard", "keyboard",
-                "LEDs on while awake",
-                "keyboard",
-                "Turn keyboard backlight on during normal use.\n"
-                "Disable to save a small amount of power."
-            ),
-            (
-                "boot", None,
-                "Boot animation",
-                None,
-                "Show an LED animation during system startup.\n"
-                "Purely cosmetic — disable to save a tiny bit of boot time."
-            ),
-            (
-                "sleep", None,
-                "Sleep animation",
-                None,
-                "Show an LED animation while the laptop is in suspend mode.\n"
-                "Disable if you find the blinking distracting."
-            ),
+            ("awake", "keyboard", "LEDs on while awake", "Turn keyboard backlight on during normal use."),
+            ("boot", None, "Boot animation", "Show an LED animation during system startup."),
+            ("sleep", None, "Sleep animation", "Show an LED animation while in suspend mode."),
         ]
 
-        for key, sub, label, sub_flag, tooltip in aura_options:
+        for key, sub_flag, label, tooltip in aura_options:
             sw = Gtk.Switch()
             sw.set_active(True)
             sw.connect("notify::active", self._on_aura, key, sub_flag)
             self._aura_switches[key] = sw
-
             row = make_row(label, tooltip, sw)
             row.set_visible(False)
             self.append(row)
@@ -124,9 +100,10 @@ class KeyboardTab(Gtk.Box):
     def _on_brightness(self, btn, lvl):
         if btn.get_active():
             _, ok = run(f"asusctl leds set {lvl}")
-            self.bright_status.set_text(
-                f"Brightness set to {LEVEL_LABELS[lvl]}" if ok else "Error setting brightness"
-            )
+            if ok:
+                show_status(self.bright_status, f"Brightness set to {LEVEL_LABELS[lvl]}")
+            else:
+                show_status(self.bright_status, "Error setting brightness", StatusType.ERROR)
 
     def _on_aura(self, sw, param, key, sub_flag):
         val = "true" if sw.get_active() else "false"
@@ -135,6 +112,7 @@ class KeyboardTab(Gtk.Box):
         else:
             cmd = f"asusctl aura power-tuf --{key} {val}"
         _, ok = run(cmd)
-        self.aura_status.set_text(
-            f"LED setting updated" if ok else f"Error: could not update LED setting"
-        )
+        if ok:
+            show_status(self.aura_status, "LED setting updated")
+        else:
+            show_status(self.aura_status, "Error updating LED setting", StatusType.ERROR)

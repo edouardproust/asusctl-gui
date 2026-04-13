@@ -2,7 +2,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 from runner import run
-from widgets import page_title, section_title, sep, status_label, card
+from widgets import page_title, section_title, sep, status_label, card, show_status, StatusType
 
 PROFILES = ["Quiet", "Balanced", "Performance"]
 
@@ -21,10 +21,7 @@ class FanTab(Gtk.Box):
         self.append(page_title("Fan"))
         self.append(sep())
 
-        desc = Gtk.Label(
-            label="Reset all fan curves to ASUS factory defaults. "
-                  "Use this if the fans behave unexpectedly."
-        )
+        desc = Gtk.Label(label="Reset all fan curves to ASUS factory defaults.")
         desc.add_css_class("dim-label")
         desc.add_css_class("caption")
         desc.set_halign(Gtk.Align.START)
@@ -48,10 +45,7 @@ class FanTab(Gtk.Box):
             text.append(d)
 
             btn = Gtk.Button(label="Reset")
-            btn.set_tooltip_text(
-                f"Restores ASUS factory fan curve for {profile}.\n"
-                "Safe to use — won't affect other profiles."
-            )
+            btn.set_tooltip_text(f"Restores ASUS factory fan curve for {profile}.")
             btn.connect("clicked", self._on_reset, profile)
 
             row.append(text)
@@ -66,6 +60,7 @@ class FanTab(Gtk.Box):
 
     def _on_reset(self, btn, profile):
         _, ok = run(f"asusctl fan-curve --mod-profile {profile} --default")
-        self.status.set_text(
-            f"{profile} fan curves reset to ASUS default." if ok else "Error resetting fan curves."
-        )
+        if ok:
+            show_status(self.status, f"{profile} fan curves reset to ASUS default.")
+        else:
+            show_status(self.status, "Error resetting fan curves.", StatusType.ERROR)

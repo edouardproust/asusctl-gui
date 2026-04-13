@@ -2,7 +2,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, GLib, Gdk
 from runner import run
-from widgets import page_title, sep, section_title
+from widgets import page_title, sep, section_title, show_status, status_label
 
 
 def _get_sensors():
@@ -94,25 +94,20 @@ def _get_system_info():
     os_name, _ = run("grep PRETTY_NAME /etc/os-release | cut -d= -f2 | tr -d '\"'")
     kernel, _ = run("uname -r")
     laptop, _ = run("cat /sys/class/dmi/id/product_name 2>/dev/null")
-    laptop_ver, _ = run("cat /sys/class/dmi/id/product_version 2>/dev/null")
     cpu, _ = run("grep 'model name' /proc/cpuinfo | head -1 | cut -d: -f2")
     ram_kb, _ = run("grep MemTotal /proc/meminfo | awk '{print $2}'")
     gpu_model, _ = run("lspci | grep -i nvidia | grep VGA | sed 's/.*: //'")
     nvidia_driver, _ = run("nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null")
     asusctl_ver, _ = run("rpm -q asusctl --queryformat '%{VERSION}'")
     supergfx_ver, _ = run("supergfxctl --version 2>/dev/null")
-
     try:
         ram_gb = str(round(int(ram_kb.strip()) / 1_048_576, 1)) + " GB"
     except Exception:
         ram_gb = "?"
-
-    laptop_full = laptop.strip() if laptop else "?"
-
     return {
         "OS": os_name.strip() if os_name else "?",
         "Kernel": kernel.strip() if kernel else "?",
-        "Laptop": laptop_full,
+        "Laptop": laptop.strip() if laptop else "?",
         "CPU": cpu.strip() if cpu else "?",
         "RAM": ram_gb,
         "GPU": gpu_model.strip() if gpu_model else "?",
@@ -128,21 +123,17 @@ def _stat_card(label, value):
     box.set_margin_bottom(10)
     box.set_margin_start(14)
     box.set_margin_end(14)
-
     lbl = Gtk.Label(label=label)
     lbl.add_css_class("caption")
     lbl.add_css_class("dim-label")
     lbl.set_halign(Gtk.Align.START)
-
     val = Gtk.Label(label=value)
     val.add_css_class("title-3")
     val.set_halign(Gtk.Align.START)
     val.set_wrap(True)
     val.set_max_width_chars(20)
-
     box.append(lbl)
     box.append(val)
-
     frame = Gtk.Frame()
     frame.set_child(box)
     frame.set_hexpand(True)
@@ -153,19 +144,16 @@ def _info_row(label, value):
     row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
     row.set_margin_top(3)
     row.set_margin_bottom(3)
-
     lbl = Gtk.Label(label=label)
     lbl.add_css_class("dim-label")
     lbl.add_css_class("caption")
     lbl.set_size_request(120, -1)
     lbl.set_halign(Gtk.Align.START)
-
     val = Gtk.Label(label=value)
     val.set_halign(Gtk.Align.START)
     val.set_wrap(True)
     val.set_hexpand(True)
     val.add_css_class("caption")
-
     row.append(lbl)
     row.append(val)
     return row, val
@@ -197,40 +185,43 @@ class DashboardTab(Gtk.Box):
         self.append(grid)
 
     def _build(self):
-        # Title row with copy button
+        # Title + copy button row
         title_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         title_row.set_hexpand(True)
 
-        title = page_title("Dashboard")
-        title.set_hexpand(True)
-        title_row.append(title)
+        title_col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        title_col.set_hexpand(True)
+        title_col.append(page_title("Dashboard"))
+
+        self.profile_lbl = Gtk.Label(label="")
+        self.profile_lbl.add_css_class("dim-label")
+        self.profile_lbl.set_halign(Gtk.Align.START)
+        title_col.append(self.profile_lbl)
+
+        copy_col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        copy_col.set_halign(Gtk.Align.END)
+        copy_col.set_valign(Gtk.Align.START)
 
         copy_btn = Gtk.Button(label="Copy system info")
         copy_btn.set_tooltip_text(
             "Copies all system information to clipboard as structured text.\n"
             "Useful for sharing with support or forums."
         )
-        copy_btn.set_valign(Gtk.Align.CENTER)
         copy_btn.connect("clicked", self._on_copy)
-        title_row.append(copy_btn)
+        copy_col.append(copy_btn)
 
+        self.copy_status = status_label()
+        self.copy_status.set_halign(Gtk.Align.END)
+        copy_col.append(self.copy_status)
+
+        title_row.append(title_col)
+        title_row.append(copy_col)
         self.append(title_row)
-
-        self.profile_lbl = Gtk.Label(label="")
-        self.profile_lbl.add_css_class("dim-label")
-        self.profile_lbl.set_halign(Gtk.Align.START)
-        self.append(self.profile_lbl)
-
-        self.copy_status = Gtk.Label(label="")
-        self.copy_status.add_css_class("caption")
-        self.copy_status.add_css_class("dim-label")
-        self.copy_status.set_halign(Gtk.Align.START)
-        self.append(self.copy_status)
 
         self.append(sep())
 
-        # System info section - collapsed by default
-        expander = Gtk.Expander(label="  System info")
+        # System info accordion
+        expander = Gtk.Expander(label="   System info")
         expander.set_expanded(False)
         expander.add_css_class("heading")
 
@@ -241,18 +232,10 @@ class DashboardTab(Gtk.Box):
         sysinfo_box.set_margin_end(12)
 
         sysinfo_keys = [
-            ("OS", "Operating system"),
-            ("Kernel", "Linux kernel version"),
-            ("Laptop", "Laptop model"),
-            ("CPU", "Processor"),
-            ("RAM", "Total RAM"),
-            ("GPU", "NVIDIA GPU model"),
-            ("NVIDIA driver", "NVIDIA driver version"),
-            ("asusctl / asusd", "asusctl and asusd version"),
-            ("supergfxctl", "supergfxctl version"),
+            "OS", "Kernel", "Laptop", "CPU", "RAM",
+            "GPU", "NVIDIA driver", "asusctl / asusd", "supergfxctl",
         ]
-
-        for key, _ in sysinfo_keys:
+        for key in sysinfo_keys:
             row, val = _info_row(key, "…")
             sysinfo_box.append(row)
             self._info_vals[key] = val
@@ -274,22 +257,15 @@ class DashboardTab(Gtk.Box):
         gpu = _get_gpu()
         sysinfo = _get_system_info()
         profile = _get_profile()
-
         self._current_data = {
-            "sensors": sensors,
-            "battery": bat,
-            "gpu": gpu,
-            "sysinfo": sysinfo,
-            "profile": profile,
+            "sensors": sensors, "battery": bat,
+            "gpu": gpu, "sysinfo": sysinfo, "profile": profile,
         }
-
         all_data = {**sensors, **bat, **gpu}
         for key, val_lbl in self._cards.items():
             val_lbl.set_text(all_data.get(key, "?"))
-
         for key, val_lbl in self._info_vals.items():
             val_lbl.set_text(sysinfo.get(key, "?"))
-
         self.profile_lbl.set_text(f"Active profile: {profile}")
         return True
 
@@ -297,7 +273,6 @@ class DashboardTab(Gtk.Box):
         d = self._current_data
         if not d:
             return
-
         si = d.get("sysinfo", {})
         lines = [
             "=== AsusCtl GUI - System Info ===",
@@ -334,9 +309,8 @@ class DashboardTab(Gtk.Box):
             "",
             "==================================",
         ]
-
         text = "\n".join(lines)
         clipboard = self.get_clipboard()
         clipboard.set(text)
-        self.copy_status.set_text("System info copied to clipboard.")
+        show_status(self.copy_status, "Copied!")
         GLib.timeout_add_seconds(3, lambda: self.copy_status.set_text("") or False)

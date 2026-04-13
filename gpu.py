@@ -3,7 +3,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw
 from runner import run
-from widgets import page_title, section_title, sep, status_label, card, make_row, expert_banner
+from widgets import page_title, section_title, sep, status_label, card, make_row, expert_banner, show_status, StatusType
 
 GPU_MODES = [
     (
@@ -23,7 +23,6 @@ GPU_MODES = [
     ),
 ]
 
-# Transitions that require logout
 NEEDS_LOGOUT = {
     ("Hybrid", "Integrated"),
     ("AsusMuxDgpu", "Integrated"),
@@ -105,7 +104,6 @@ class GpuTab(Gtk.Box):
         self.status = status_label()
         self.append(self.status)
 
-        # -- EXPERT --
         self._exp_sep = sep()
         self._exp_sep.set_visible(False)
         self.append(self._exp_sep)
@@ -164,7 +162,7 @@ class GpuTab(Gtk.Box):
                 heading=f"Switch to {name} mode?",
                 body=(
                     f"Switching from {self._current_mode} to {name} requires a logout.\n\n"
-                    "Unsaved work will be lost if you log out now."
+                    "Unsaved work will be lost."
                 ),
             )
             dialog.add_response("cancel", "Cancel")
@@ -181,22 +179,18 @@ class GpuTab(Gtk.Box):
             for n, b in self._buttons.items():
                 b.set_active(n == self._current_mode)
             return
-        if response == "logout":
-            self._apply_mode(name, logout=True)
+        self._apply_mode(name, logout=True)
 
     def _apply_mode(self, name, logout=False):
         _, ok = run(f"supergfxctl --mode {name}")
         if ok:
             self._current_mode = name
-            if (self._current_mode, name) in NEEDS_LOGOUT:
-                self.notice.set_text("Log out to fully apply the GPU mode change.")
-            else:
-                self.notice.set_text("")
-            self.status.set_text(f"GPU mode set to {name}.")
+            if ok:
+                show_status(self.status, f"GPU mode set to {name}.")
             if logout:
                 run("gnome-session-quit --logout --no-prompt")
         else:
-            self.status.set_text("Error setting GPU mode.")
+            show_status(self.status, "Error setting GPU mode.", StatusType.ERROR)
             for n, b in self._buttons.items():
                 b.set_active(n == self._current_mode)
 
@@ -204,14 +198,16 @@ class GpuTab(Gtk.Box):
         val = "1" if sw.get_active() else "0"
         _, ok = run(f"asusctl armoury set dgpu_disable {val}")
         state = "disabled" if sw.get_active() else "enabled"
-        self.exp_status.set_text(
-            f"NVIDIA GPU {state}. Reboot to apply." if ok else "Error updating dGPU setting"
-        )
+        if ok:
+            show_status(self.exp_status, f"NVIDIA GPU {state}. Reboot to apply.")
+        else:
+            show_status(self.exp_status, "Error updating dGPU setting.", StatusType.ERROR)
 
     def _on_panel_overdrive(self, sw, param):
         val = "1" if sw.get_active() else "0"
         _, ok = run(f"asusctl armoury set panel_overdrive {val}")
         state = "enabled" if sw.get_active() else "disabled"
-        self.exp_status.set_text(
-            f"Panel overdrive {state}." if ok else "Error updating panel overdrive"
-        )
+        if ok:
+            show_status(self.exp_status, f"Panel overdrive {state}.")
+        else:
+            show_status(self.exp_status, "Error updating panel overdrive.", StatusType.ERROR)
