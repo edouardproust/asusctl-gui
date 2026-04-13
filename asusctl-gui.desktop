@@ -1,11 +1,10 @@
 [Desktop Entry]
-Name=AsusCtl GUI
-Comment=Control ASUS laptop settings
+Name=ASUS Control Center
+Comment=Control ASUS laptop settings - battery, performance, GPU, fans
 Exec=python3 /opt/asusctl-gui/main.py
-Icon=asus_notif_blue
+Icon=preferences-system
 Terminal=false
 Type=Application
 Categories=Settings;System;
 Keywords=asus;battery;fan;gpu;performance;
 StartupNotify=true
-StartupWMClass=main

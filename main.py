@@ -7,17 +7,15 @@ import os
 
 from dashboard import DashboardTab
 from battery import BatteryTab
-from performance import PerformanceTab
 from keyboard import KeyboardTab
 from gpu import GpuTab
 from fan import FanTab
 
 TABS = [
     ("Dashboard", DashboardTab),
-    ("Battery", BatteryTab),
-    ("Performance", PerformanceTab),
-    ("Keyboard", KeyboardTab),
     ("GPU", GpuTab),
+    ("Battery", BatteryTab),
+    ("Keyboard", KeyboardTab),
     ("Fan", FanTab),
 ]
 

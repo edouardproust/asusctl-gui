@@ -4,6 +4,12 @@ from gi.repository import Gtk
 from runner import run
 from widgets import page_title, section_title, sep, status_label, make_row, card, expert_banner, show_status, StatusType
 
+PROFILES = [
+    ("Quiet", "Low noise and power. Best for battery life and everyday tasks."),
+    ("Balanced", "Standard performance. Good balance between speed and battery."),
+    ("Performance", "Maximum CPU/GPU performance. Higher fan noise and power draw."),
+]
+
 
 def _get_limit():
     out, _ = run("asusctl battery info")
@@ -14,6 +20,14 @@ def _get_limit():
             except Exception:
                 pass
     return 90
+
+
+def _get_active_profile():
+    out, _ = run("asusctl profile get")
+    for line in out.splitlines():
+        if "Active profile:" in line:
+            return line.split(":")[1].strip()
+    return "Balanced"
 
 
 class BatteryTab(Gtk.Box):
@@ -27,13 +41,57 @@ class BatteryTab(Gtk.Box):
         self._build()
 
     def _build(self):
-        self.append(page_title("Battery"))
+        self.append(page_title("Battery & Performance"))
         self.append(sep())
 
+        # -- Performance profile --
+        self.append(section_title("Performance profile"))
+
+        active = _get_active_profile()
+        group = None
+        self._profile_buttons = {}
+
+        for name, desc in PROFILES:
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            row.set_margin_top(2)
+            row.set_margin_bottom(2)
+
+            if group is None:
+                btn = Gtk.CheckButton()
+                group = btn
+            else:
+                btn = Gtk.CheckButton()
+                btn.set_group(group)
+
+            btn.set_active(name == active)
+            btn.connect("toggled", self._on_profile, name)
+            self._profile_buttons[name] = btn
+
+            text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            text.set_hexpand(True)
+            n = Gtk.Label(label=name)
+            n.set_halign(Gtk.Align.START)
+            d = Gtk.Label(label=desc)
+            d.add_css_class("caption")
+            d.add_css_class("dim-label")
+            d.set_halign(Gtk.Align.START)
+            d.set_wrap(True)
+            text.append(n)
+            text.append(d)
+
+            row.append(btn)
+            row.append(text)
+            self.append(card(row))
+
+        self.profile_status = status_label()
+        self.append(self.profile_status)
+
+        self.append(sep())
+
+        # -- Charge limit --
         self.append(section_title("Charge limit"))
 
         current = _get_limit()
-        self._limit_val = current
 
         limit_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         self.scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 20, 100, 1)
@@ -61,6 +119,7 @@ class BatteryTab(Gtk.Box):
 
         self.append(sep())
 
+        # -- One-time full charge --
         self.append(section_title("One-time full charge"))
 
         oneshot_row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -92,6 +151,7 @@ class BatteryTab(Gtk.Box):
         oneshot_row.append(self.oneshot_status)
         self.append(card(oneshot_row))
 
+        # -- Expert --
         self._expert_sep = sep()
         self._expert_sep.set_visible(False)
         self.append(self._expert_sep)
@@ -132,6 +192,14 @@ class BatteryTab(Gtk.Box):
     def set_expert(self, active):
         for w in self._expert_widgets:
             w.set_visible(active)
+
+    def _on_profile(self, btn, name):
+        if btn.get_active():
+            _, ok = run(f"asusctl profile set {name}")
+            if ok:
+                show_status(self.profile_status, f"Profile set to {name}")
+            else:
+                show_status(self.profile_status, f"Error setting {name}", StatusType.ERROR)
 
     def _on_limit(self, scale):
         val = int(scale.get_value())

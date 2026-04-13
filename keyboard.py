@@ -1,11 +1,13 @@
 import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
-from runner import run
-from widgets import page_title, section_title, sep, status_label, make_row, card, expert_banner, show_status, StatusType
+from runner import run, is_aura_supported
+from widgets import page_title, section_title, sep, status_label, make_row, expert_banner, show_status, StatusType
 
 LEVELS = ["off", "low", "med", "high"]
 LEVEL_LABELS = {"off": "Off", "low": "Low", "med": "Medium", "high": "High"}
+
+AURA_SUPPORTED = is_aura_supported()
 
 
 def _get_brightness():
@@ -53,6 +55,7 @@ class KeyboardTab(Gtk.Box):
         self.bright_status = status_label()
         self.append(self.bright_status)
 
+        # -- EXPERT --
         self._exp_sep = sep()
         self._exp_sep.set_visible(False)
         self.append(self._exp_sep)
@@ -68,21 +71,27 @@ class KeyboardTab(Gtk.Box):
         self._aura_rows = []
         self._aura_switches = {}
 
-        aura_options = [
-            ("awake", "keyboard", "LEDs on while awake", "Turn keyboard backlight on during normal use."),
-            ("boot", None, "Boot animation", "Show an LED animation during system startup."),
-            ("sleep", None, "Sleep animation", "Show an LED animation while in suspend mode."),
-        ]
-
-        for key, sub_flag, label, tooltip in aura_options:
-            sw = Gtk.Switch()
-            sw.set_active(True)
-            sw.connect("notify::active", self._on_aura, key, sub_flag)
-            self._aura_switches[key] = sw
-            row = make_row(label, tooltip, sw)
-            row.set_visible(False)
-            self.append(row)
-            self._aura_rows.append(row)
+        if not AURA_SUPPORTED:
+            not_supported = status_label(StatusType.ERROR)
+            not_supported.set_text("Not supported on this laptop model (aura power-tuf).")
+            not_supported.set_visible(False)
+            self.append(not_supported)
+            self._aura_rows.append(not_supported)
+        else:
+            aura_options = [
+                ("awake", "keyboard", "LEDs on while awake", "Turn keyboard backlight on during normal use."),
+                ("boot", None, "Boot animation", "Show an LED animation during system startup."),
+                ("sleep", None, "Sleep animation", "Show an LED animation while in suspend mode."),
+            ]
+            for key, sub_flag, label, tooltip in aura_options:
+                sw = Gtk.Switch()
+                sw.set_active(True)
+                sw.connect("notify::active", self._on_aura, key, sub_flag)
+                self._aura_switches[key] = sw
+                row = make_row(label, tooltip, sw)
+                row.set_visible(False)
+                self.append(row)
+                self._aura_rows.append(row)
 
         self.aura_status = status_label()
         self.aura_status.set_visible(False)
