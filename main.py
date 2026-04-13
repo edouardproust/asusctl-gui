@@ -21,26 +21,6 @@ TABS = [
     ("Fan", FanTab),
 ]
 
-CSS = b"""
-.sidebar-btn {
-    border-radius: 6px;
-    padding: 8px 10px;
-    font-size: 13px;
-    min-height: 0;
-    min-width: 0;
-}
-.sidebar-btn:hover {
-    background-color: alpha(currentColor, 0.08);
-}
-.sidebar-btn.active {
-    background-color: @accent_bg_color;
-    color: @accent_fg_color;
-}
-.sidebar {
-    background-color: @headerbar_bg_color;
-}
-"""
-
 
 class AsusCtlApp(Adw.Application):
     def __init__(self):
@@ -55,6 +35,8 @@ class AsusCtlApp(Adw.Application):
         self.win.set_title("AsusCtl GUI")
         self.win.set_default_size(860, 620)
 
+        # styles
+        CSS = open("/opt/asusctl-gui/style.css", "rb").read()
         provider = Gtk.CssProvider()
         provider.load_from_data(CSS)
         Gtk.StyleContext.add_provider_for_display(
@@ -76,7 +58,7 @@ class AsusCtlApp(Adw.Application):
         outer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
 
         sidebar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        sidebar.set_size_request(150, -1)
+        sidebar.set_size_request(160, -1)
         sidebar.set_hexpand(False)
         sidebar.add_css_class("sidebar")
         sidebar.set_margin_top(8)
@@ -128,13 +110,13 @@ class AsusCtlApp(Adw.Application):
         self.exp_sw = Gtk.Switch()
         self.exp_sw.set_valign(Gtk.Align.CENTER)
         self.exp_sw.connect("notify::active", self._on_expert)
+        for margin in [exp_row.set_margin_start, exp_row.set_margin_end, exp_row.set_margin_bottom]:
+            margin(12)
         exp_row.append(exp_lbl)
         exp_row.append(self.exp_sw)
         sidebar.append(exp_row)
 
-        vsep = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
         outer.append(sidebar)
-        outer.append(vsep)
         outer.append(scroll_content)
 
         toolbar_view.set_content(outer)
