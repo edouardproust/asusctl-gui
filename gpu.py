@@ -3,7 +3,10 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw
 from runner import run
-from widgets import page_title, section_title, sep, status_label, card, make_row, expert_banner
+from widgets import (
+    page_title, section_title, sep, status_label, card,
+    make_row, expert_banner, show_status, StatusType, confirm_dialog
+)
 
 GPU_MODES = [
     (
@@ -23,7 +26,6 @@ GPU_MODES = [
     ),
 ]
 
-# Transitions that require logout
 NEEDS_LOGOUT = {
     ("Hybrid", "Integrated"),
     ("AsusMuxDgpu", "Integrated"),
@@ -114,14 +116,15 @@ class GpuTab(Gtk.Box):
         self._exp_banner.set_visible(False)
         self.append(self._exp_banner)
 
-        dgpu_sw = Gtk.Switch()
-        dgpu_sw.connect("notify::active", self._on_dgpu_disable)
+        self._dgpu_sw = Gtk.Switch()
+        self._dgpu_sw.connect("notify::active", self._on_dgpu_disable)
         self._dgpu_row = make_row(
             "Disable NVIDIA GPU entirely",
             "Completely powers off the NVIDIA GPU at the BIOS level.\n"
-            "Maximum battery savings. Requires a reboot to take effect.",
-            dgpu_sw,
-            subtitle="Requires reboot. Cannot be used with Hybrid or AsusMuxDgpu modes."
+            "Maximum battery savings. Requires a reboot to take effect.\n"
+            "Cannot be used with Hybrid or AsusMuxDgpu modes.",
+            self._dgpu_sw,
+            subtitle="Requires reboot."
         )
         self._dgpu_row.set_visible(False)
         self.append(self._dgpu_row)
@@ -151,67 +154,71 @@ class GpuTab(Gtk.Box):
             w.set_visible(active)
 
     def _on_mode(self, btn, name):
-        if not btn.get_active():
-            return
-        if name == self._current_mode:
+        if not btn.get_active() or name == self._current_mode:
             return
 
-        requires_logout = (self._current_mode, name) in NEEDS_LOGOUT
-
-        if requires_logout:
-            dialog = Adw.MessageDialog(
-                transient_for=self.get_root(),
+        if (self._current_mode, name) in NEEDS_LOGOUT:
+            confirm_dialog(
+                self,
                 heading=f"Switch to {name} mode?",
-                body=(
-                    f"Switching from {self._current_mode} to {name} requires a logout.\n\n"
-                    "Unsaved work will be lost if you log out now."
-                ),
+                body=f"Switching from {self._current_mode} to {name} requires a logout.\n\nUnsaved work will be lost.",
+                confirm_label="Log out now",
+                on_confirm=lambda: self._apply_mode(name, logout=True),
+                on_cancel=lambda: self._revert_mode(),
             )
-            dialog.add_response("cancel", "Cancel")
-            dialog.add_response("logout", "Apply and log out now")
-            dialog.set_response_appearance("logout", Adw.ResponseAppearance.DESTRUCTIVE)
-            dialog.set_default_response("logout")
-            dialog.connect("response", self._on_dialog_response, name)
-            dialog.present()
         else:
             self._apply_mode(name, logout=False)
 
-    def _on_dialog_response(self, dialog, response, name):
-        if response == "cancel":
-            for n, b in self._buttons.items():
-                b.set_active(n == self._current_mode)
-            return
-        if response == "logout":
-            self._apply_mode(name, logout=True)
+    def _revert_mode(self):
+        for n, b in self._buttons.items():
+            b.set_active(n == self._current_mode)
 
     def _apply_mode(self, name, logout=False):
         _, ok = run(f"supergfxctl --mode {name}")
         if ok:
             self._current_mode = name
-            if (self._current_mode, name) in NEEDS_LOGOUT:
-                self.notice.set_text("Log out to fully apply the GPU mode change.")
-            else:
-                self.notice.set_text("")
-            self.status.set_text(f"GPU mode set to {name}.")
+            show_status(self.status, f"GPU mode set to {name}.")
             if logout:
                 run("gnome-session-quit --logout --no-prompt")
         else:
-            self.status.set_text("Error setting GPU mode.")
-            for n, b in self._buttons.items():
-                b.set_active(n == self._current_mode)
+            show_status(self.status, "Error setting GPU mode.", StatusType.ERROR)
+            self._revert_mode()
 
     def _on_dgpu_disable(self, sw, param):
-        val = "1" if sw.get_active() else "0"
-        _, ok = run(f"asusctl armoury set dgpu_disable {val}")
-        state = "disabled" if sw.get_active() else "enabled"
-        self.exp_status.set_text(
-            f"NVIDIA GPU {state}. Reboot to apply." if ok else "Error updating dGPU setting"
-        )
+        val = sw.get_active()
+
+        def apply():
+            _, ok = run(f"asusctl armoury set dgpu_disable {'1' if val else '0'}")
+            state = "disabled" if val else "enabled"
+            if ok:
+                show_status(self.exp_status, f"NVIDIA GPU {state}. Reboot to apply.")
+            else:
+                show_status(self.exp_status, "Error updating dGPU setting.", StatusType.ERROR)
+                sw.set_active(not val)
+
+        def revert():
+            sw.set_active(not val)
+
+        if val:
+            confirm_dialog(
+                self,
+                heading="Disable NVIDIA GPU?",
+                body="This will completely power off the NVIDIA GPU at BIOS level.\n\nA reboot is required. You can apply now and reboot later.",
+                confirm_label="Reboot now",
+                show_later=True,
+                later_label="Apply, reboot later",
+                on_confirm=lambda: (apply(), run("systemctl reboot")),
+                on_later=apply,
+                on_cancel=revert,
+            )
+        else:
+            apply()
 
     def _on_panel_overdrive(self, sw, param):
         val = "1" if sw.get_active() else "0"
         _, ok = run(f"asusctl armoury set panel_overdrive {val}")
         state = "enabled" if sw.get_active() else "disabled"
-        self.exp_status.set_text(
-            f"Panel overdrive {state}." if ok else "Error updating panel overdrive"
-        )
+        if ok:
+            show_status(self.exp_status, f"Panel overdrive {state}.")
+        else:
+            show_status(self.exp_status, "Error updating panel overdrive.", StatusType.ERROR)

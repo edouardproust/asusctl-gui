@@ -2,7 +2,13 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk
 from runner import run
-from widgets import page_title, section_title, sep, status_label, make_row, card, expert_banner
+from widgets import page_title, section_title, sep, status_label, make_row, card, expert_banner, show_status, StatusType
+
+PROFILES = [
+    ("Quiet", "Low noise and power. Best for battery life and everyday tasks."),
+    ("Balanced", "Standard performance. Good balance between speed and battery."),
+    ("Performance", "Maximum CPU/GPU performance. Higher fan noise and power draw."),
+]
 
 
 def _get_limit():
@@ -16,6 +22,14 @@ def _get_limit():
     return 90
 
 
+def _get_active_profile():
+    out, _ = run("asusctl profile get")
+    for line in out.splitlines():
+        if "Active profile:" in line:
+            return line.split(":")[1].strip()
+    return "Balanced"
+
+
 class BatteryTab(Gtk.Box):
     def __init__(self):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -27,14 +41,57 @@ class BatteryTab(Gtk.Box):
         self._build()
 
     def _build(self):
-        self.append(page_title("Battery"))
+        self.append(page_title("Battery & Performance"))
+        self.append(sep())
+
+        # -- Performance profile --
+        self.append(section_title("Performance profile"))
+
+        active = _get_active_profile()
+        group = None
+        self._profile_buttons = {}
+
+        for name, desc in PROFILES:
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            row.set_margin_top(2)
+            row.set_margin_bottom(2)
+
+            if group is None:
+                btn = Gtk.CheckButton()
+                group = btn
+            else:
+                btn = Gtk.CheckButton()
+                btn.set_group(group)
+
+            btn.set_active(name == active)
+            btn.connect("toggled", self._on_profile, name)
+            self._profile_buttons[name] = btn
+
+            text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            text.set_hexpand(True)
+            n = Gtk.Label(label=name)
+            n.set_halign(Gtk.Align.START)
+            d = Gtk.Label(label=desc)
+            d.add_css_class("caption")
+            d.add_css_class("dim-label")
+            d.set_halign(Gtk.Align.START)
+            d.set_wrap(True)
+            text.append(n)
+            text.append(d)
+
+            row.append(btn)
+            row.append(text)
+            self.append(card(row))
+
+        self.profile_status = status_label()
+        self.append(self.profile_status)
+
         self.append(sep())
 
         # -- Charge limit --
         self.append(section_title("Charge limit"))
 
         current = _get_limit()
-        self._limit_val = current
 
         limit_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         self.scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 20, 100, 1)
@@ -51,7 +108,7 @@ class BatteryTab(Gtk.Box):
         self.scale.connect("value-changed", self._on_limit)
 
         self.limit_lbl = Gtk.Label(label=f"{current}%")
-        self.limit_lbl.set_size_request(40, -1)
+        self.limit_lbl.set_width_chars(4)
 
         limit_box.append(self.scale)
         limit_box.append(self.limit_lbl)
@@ -62,7 +119,7 @@ class BatteryTab(Gtk.Box):
 
         self.append(sep())
 
-        # -- One-shot --
+        # -- One-time full charge --
         self.append(section_title("One-time full charge"))
 
         oneshot_row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -94,7 +151,7 @@ class BatteryTab(Gtk.Box):
         oneshot_row.append(self.oneshot_status)
         self.append(card(oneshot_row))
 
-        # -- EXPERT --
+        # -- Expert --
         self._expert_sep = sep()
         self._expert_sep.set_visible(False)
         self.append(self._expert_sep)
@@ -118,7 +175,7 @@ class BatteryTab(Gtk.Box):
             "BIOS charge mode",
             charge_mode_desc,
             combo,
-            subtitle="Advanced BIOS-level battery strategy (overrides charge limit on some models)."
+            subtitle="Advanced BIOS-level battery strategy."
         )
         self._expert_row.set_visible(False)
         self.append(self._expert_row)
@@ -128,36 +185,45 @@ class BatteryTab(Gtk.Box):
         self.append(self._expert_status)
 
         self._expert_widgets = [
-            self._expert_sep,
-            self._expert_banner,
-            self._expert_row,
-            self._expert_status,
+            self._expert_sep, self._expert_banner,
+            self._expert_row, self._expert_status,
         ]
 
     def set_expert(self, active):
         for w in self._expert_widgets:
             w.set_visible(active)
 
+    def _on_profile(self, btn, name):
+        if btn.get_active():
+            _, ok = run(f"asusctl profile set {name}")
+            if ok:
+                show_status(self.profile_status, f"Profile set to {name}")
+            else:
+                show_status(self.profile_status, f"Error setting {name}", StatusType.ERROR)
+
     def _on_limit(self, scale):
         val = int(scale.get_value())
         self.limit_lbl.set_text(f"{val}%")
         _, ok = run(f"asusctl battery limit {val}")
-        self.limit_status.set_text(f"Limit set to {val}%" if ok else "Error setting limit")
+        if ok:
+            show_status(self.limit_status, f"Limit set to {val}%")
+        else:
+            show_status(self.limit_status, "Error setting limit", StatusType.ERROR)
 
     def _on_oneshot(self, btn):
         _, ok = run("asusctl battery oneshot")
         if ok:
-            self.oneshot_status.set_text("Charging to 100% for this cycle.")
+            show_status(self.oneshot_status, "Charging to 100% for this cycle.")
             self.oneshot_btn.set_sensitive(False)
             self.oneshot_cancel_btn.set_visible(True)
         else:
-            self.oneshot_status.set_text("Error activating one-shot charge.")
+            show_status(self.oneshot_status, "Error activating one-shot charge.", StatusType.ERROR)
 
     def _on_oneshot_cancel(self, btn):
         val = int(self.scale.get_value())
         _, ok = run(f"asusctl battery limit {val}")
         if ok:
-            self.oneshot_status.set_text(f"One-shot cancelled. Limit restored to {val}%.")
+            show_status(self.oneshot_status, f"One-shot cancelled. Limit restored to {val}%.")
             self.oneshot_btn.set_sensitive(True)
             self.oneshot_cancel_btn.set_visible(False)
 
@@ -165,4 +231,7 @@ class BatteryTab(Gtk.Box):
         vals = ["0", "1", "2"]
         val = vals[combo.get_selected()]
         _, ok = run(f"asusctl armoury set charge_mode {val}")
-        self._expert_status.set_text("Charge mode updated." if ok else "Error setting charge mode.")
+        if ok:
+            show_status(self._expert_status, "Charge mode updated.")
+        else:
+            show_status(self._expert_status, "Error setting charge mode.", StatusType.ERROR)

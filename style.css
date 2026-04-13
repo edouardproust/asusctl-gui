@@ -1,0 +1,18 @@
+.sidebar-btn {
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 13px;
+    min-height: 0;
+    min-width: 0;
+}
+.sidebar-btn:hover {
+    background-color: alpha(currentColor, 0.08);
+}
+.sidebar-btn.active {
+    background-color: @accent_bg_color;
+    color: @accent_fg_color;
+}
+.sidebar {
+    background-color: @headerbar_bg_color;
+    border: none;
+}

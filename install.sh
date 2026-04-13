@@ -2,7 +2,7 @@
 set -e
 echo "Installing AsusCtl GUI..."
 sudo mkdir -p /opt/asusctl-gui
-sudo cp *.py /opt/asusctl-gui/
+sudo cp *.py *.css /opt/asusctl-gui/
 sudo chmod +x /opt/asusctl-gui/main.py
 chmod +x uninstall.sh 2>/dev/null || true
 

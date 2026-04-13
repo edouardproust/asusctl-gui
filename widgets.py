@@ -1,9 +1,71 @@
 import gi
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk
+gi.require_version("Adw", "1")
+from gi.repository import Gtk, Adw
+from enum import Enum
+from typing import Optional, Callable
 
 
-def section_title(text):
+class StatusType(Enum):
+    SUCCESS = "success"
+    ERROR = "error"
+    INFO = "dim-label"
+
+
+def status_label(status_type: Optional[StatusType] = None) -> Gtk.Label:
+    lbl = Gtk.Label(label="")
+    lbl.add_css_class("caption")
+    lbl.set_halign(Gtk.Align.START)
+    if status_type:
+        lbl.add_css_class(status_type.value)
+    return lbl
+
+
+def show_status(lbl: Gtk.Label, message: str, status: StatusType = StatusType.SUCCESS) -> None:
+    lbl.set_text(message)
+    for s in StatusType:
+        lbl.remove_css_class(s.value)
+    lbl.add_css_class(status.value)
+
+
+def confirm_dialog(
+    parent: Gtk.Widget,
+    heading: str,
+    body: str,
+    confirm_label: str,
+    confirm_appearance: Adw.ResponseAppearance = Adw.ResponseAppearance.DESTRUCTIVE,
+    show_later: bool = False,
+    later_label: str = "Apply later",
+    on_confirm: Optional[Callable] = None,
+    on_later: Optional[Callable] = None,
+    on_cancel: Optional[Callable] = None,
+) -> None:
+    dialog = Adw.MessageDialog(
+        transient_for=parent.get_root(),
+        heading=heading,
+        body=body,
+    )
+    dialog.add_response("cancel", "Cancel")
+    if show_later:
+        dialog.add_response("later", later_label)
+        dialog.set_response_appearance("later", Adw.ResponseAppearance.SUGGESTED)
+    dialog.add_response("confirm", confirm_label)
+    dialog.set_response_appearance("confirm", confirm_appearance)
+    dialog.set_default_response("confirm")
+
+    def on_response(dlg, response):
+        if response == "confirm" and on_confirm:
+            on_confirm()
+        elif response == "later" and on_later:
+            on_later()
+        elif response == "cancel" and on_cancel:
+            on_cancel()
+
+    dialog.connect("response", on_response)
+    dialog.present()
+
+
+def section_title(text: str) -> Gtk.Label:
     lbl = Gtk.Label(label=text)
     lbl.add_css_class("heading")
     lbl.set_halign(Gtk.Align.START)
@@ -11,14 +73,14 @@ def section_title(text):
     return lbl
 
 
-def page_title(text):
+def page_title(text: str) -> Gtk.Label:
     lbl = Gtk.Label(label=text)
     lbl.add_css_class("title-1")
     lbl.set_halign(Gtk.Align.START)
     return lbl
 
 
-def dim_label(text):
+def dim_label(text: str) -> Gtk.Label:
     lbl = Gtk.Label(label=text)
     lbl.add_css_class("dim-label")
     lbl.add_css_class("caption")
@@ -27,16 +89,7 @@ def dim_label(text):
     return lbl
 
 
-def status_label():
-    lbl = Gtk.Label(label="")
-    lbl.add_css_class("dim-label")
-    lbl.add_css_class("caption")
-    lbl.set_halign(Gtk.Align.START)
-    return lbl
-
-
-def make_row(label_text, tooltip, control, subtitle=None):
-    """A settings row with label, optional subtitle, tooltip icon, and a control widget."""
+def make_row(label_text: str, tooltip: Optional[str], control: Optional[Gtk.Widget], subtitle: Optional[str] = None) -> Gtk.Box:
     outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
     outer.set_margin_top(2)
     outer.set_margin_bottom(2)
@@ -44,7 +97,6 @@ def make_row(label_text, tooltip, control, subtitle=None):
     outer.set_margin_end(4)
 
     row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-
     text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
     text_box.set_hexpand(True)
 
@@ -80,7 +132,7 @@ def make_row(label_text, tooltip, control, subtitle=None):
     return outer
 
 
-def card(child):
+def card(child: Gtk.Widget) -> Gtk.Frame:
     frame = Gtk.Frame()
     frame.set_margin_top(4)
     frame.set_margin_bottom(4)
@@ -94,14 +146,14 @@ def card(child):
     return frame
 
 
-def sep():
+def sep() -> Gtk.Separator:
     s = Gtk.Separator()
     s.set_margin_top(8)
     s.set_margin_bottom(8)
     return s
 
 
-def expert_banner():
+def expert_banner() -> Gtk.Box:
     box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
     box.set_margin_top(4)
     box.set_margin_bottom(4)
