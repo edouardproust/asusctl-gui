@@ -91,13 +91,34 @@ def _get_profile():
 
 
 def _get_system_info():
-    kernel, _ = run("uname -r")
-    cpu, _ = run("grep 'model name' /proc/cpuinfo | head -1 | cut -d: -f2")
     os_name, _ = run("grep PRETTY_NAME /etc/os-release | cut -d= -f2 | tr -d '\"'")
+    kernel, _ = run("uname -r")
+    laptop, _ = run("cat /sys/class/dmi/id/product_name 2>/dev/null")
+    laptop_ver, _ = run("cat /sys/class/dmi/id/product_version 2>/dev/null")
+    cpu, _ = run("grep 'model name' /proc/cpuinfo | head -1 | cut -d: -f2")
+    ram_kb, _ = run("grep MemTotal /proc/meminfo | awk '{print $2}'")
+    gpu_model, _ = run("lspci | grep -i nvidia | grep VGA | sed 's/.*: //'")
+    nvidia_driver, _ = run("nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null")
+    asusctl_ver, _ = run("rpm -q asusctl --queryformat '%{VERSION}'")
+    supergfx_ver, _ = run("supergfxctl --version 2>/dev/null")
+
+    try:
+        ram_gb = str(round(int(ram_kb.strip()) / 1_048_576, 1)) + " GB"
+    except Exception:
+        ram_gb = "?"
+
+    laptop_full = laptop.strip() if laptop else "?"
+
     return {
         "OS": os_name.strip() if os_name else "?",
         "Kernel": kernel.strip() if kernel else "?",
+        "Laptop": laptop_full,
         "CPU": cpu.strip() if cpu else "?",
+        "RAM": ram_gb,
+        "GPU": gpu_model.strip() if gpu_model else "?",
+        "NVIDIA driver": nvidia_driver.strip() if nvidia_driver else "?",
+        "asusctl / asusd": asusctl_ver.strip() if asusctl_ver else "?",
+        "supergfxctl": supergfx_ver.strip() if supergfx_ver else "?",
     }
 
 
@@ -116,6 +137,8 @@ def _stat_card(label, value):
     val = Gtk.Label(label=value)
     val.add_css_class("title-3")
     val.set_halign(Gtk.Align.START)
+    val.set_wrap(True)
+    val.set_max_width_chars(20)
 
     box.append(lbl)
     box.append(val)
@@ -126,6 +149,28 @@ def _stat_card(label, value):
     return frame, val
 
 
+def _info_row(label, value):
+    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+    row.set_margin_top(3)
+    row.set_margin_bottom(3)
+
+    lbl = Gtk.Label(label=label)
+    lbl.add_css_class("dim-label")
+    lbl.add_css_class("caption")
+    lbl.set_size_request(120, -1)
+    lbl.set_halign(Gtk.Align.START)
+
+    val = Gtk.Label(label=value)
+    val.set_halign(Gtk.Align.START)
+    val.set_wrap(True)
+    val.set_hexpand(True)
+    val.add_css_class("caption")
+
+    row.append(lbl)
+    row.append(val)
+    return row, val
+
+
 class DashboardTab(Gtk.Box):
     def __init__(self):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -134,6 +179,7 @@ class DashboardTab(Gtk.Box):
         self.set_margin_start(20)
         self.set_margin_end(20)
         self._cards = {}
+        self._info_vals = {}
         self._current_data = {}
         self._build()
         GLib.timeout_add_seconds(3, self._refresh)
@@ -182,6 +228,39 @@ class DashboardTab(Gtk.Box):
         self.append(self.copy_status)
 
         self.append(sep())
+
+        # System info section - collapsed by default
+        expander = Gtk.Expander(label="  System info")
+        expander.set_expanded(False)
+        expander.add_css_class("heading")
+
+        sysinfo_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        sysinfo_box.set_margin_top(8)
+        sysinfo_box.set_margin_bottom(8)
+        sysinfo_box.set_margin_start(12)
+        sysinfo_box.set_margin_end(12)
+
+        sysinfo_keys = [
+            ("OS", "Operating system"),
+            ("Kernel", "Linux kernel version"),
+            ("Laptop", "Laptop model"),
+            ("CPU", "Processor"),
+            ("RAM", "Total RAM"),
+            ("GPU", "NVIDIA GPU model"),
+            ("NVIDIA driver", "NVIDIA driver version"),
+            ("asusctl / asusd", "asusctl and asusd version"),
+            ("supergfxctl", "supergfxctl version"),
+        ]
+
+        for key, _ in sysinfo_keys:
+            row, val = _info_row(key, "…")
+            sysinfo_box.append(row)
+            self._info_vals[key] = val
+
+        expander.set_child(sysinfo_box)
+        self.append(expander)
+
+        self.append(sep())
         self._grid_section("Temperatures & fans", ["CPU", "CPU Fan", "GPU Fan", "NVMe"])
         self.append(sep())
         self._grid_section("Battery", ["Charge", "Status", "Power draw", "Charge limit"])
@@ -208,6 +287,9 @@ class DashboardTab(Gtk.Box):
         for key, val_lbl in self._cards.items():
             val_lbl.set_text(all_data.get(key, "?"))
 
+        for key, val_lbl in self._info_vals.items():
+            val_lbl.set_text(sysinfo.get(key, "?"))
+
         self.profile_lbl.set_text(f"Active profile: {profile}")
         return True
 
@@ -216,14 +298,21 @@ class DashboardTab(Gtk.Box):
         if not d:
             return
 
+        si = d.get("sysinfo", {})
         lines = [
             "=== AsusCtl GUI - System Info ===",
             "",
             "[ System ]",
-            f"  OS      : {d['sysinfo'].get('OS', '?')}",
-            f"  Kernel  : {d['sysinfo'].get('Kernel', '?')}",
-            f"  CPU     : {d['sysinfo'].get('CPU', '?')}",
-            f"  Profile : {d.get('profile', '?')}",
+            f"  OS            : {si.get('OS', '?')}",
+            f"  Kernel        : {si.get('Kernel', '?')}",
+            f"  Laptop        : {si.get('Laptop', '?')}",
+            f"  CPU           : {si.get('CPU', '?')}",
+            f"  RAM           : {si.get('RAM', '?')}",
+            f"  GPU           : {si.get('GPU', '?')}",
+            f"  NVIDIA driver : {si.get('NVIDIA driver', '?')}",
+            f"  asusctl/asusd : {si.get('asusctl / asusd', '?')}",
+            f"  supergfxctl   : {si.get('supergfxctl', '?')}",
+            f"  Profile       : {d.get('profile', '?')}",
             "",
             "[ Temperatures & Fans ]",
             f"  CPU temp : {d['sensors'].get('CPU', '?')}",
@@ -238,12 +327,12 @@ class DashboardTab(Gtk.Box):
             f"  Charge limit : {d['battery'].get('Charge limit', '?')}",
             "",
             "[ GPU ]",
-            f"  Mode       : {d['gpu'].get('Mode', '?')}",
-            f"  dGPU status: {d['gpu'].get('dGPU status', '?')}",
-            f"  GPU temp   : {d['gpu'].get('GPU temp', '?')}",
-            f"  GPU power  : {d['gpu'].get('GPU power', '?')}",
+            f"  Mode        : {d['gpu'].get('Mode', '?')}",
+            f"  dGPU status : {d['gpu'].get('dGPU status', '?')}",
+            f"  GPU temp    : {d['gpu'].get('GPU temp', '?')}",
+            f"  GPU power   : {d['gpu'].get('GPU power', '?')}",
             "",
-            "==========================================",
+            "==================================",
         ]
 
         text = "\n".join(lines)
