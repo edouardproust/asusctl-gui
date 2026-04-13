@@ -89,7 +89,12 @@ def dim_label(text: str) -> Gtk.Label:
     return lbl
 
 
-def make_row(label_text: str, tooltip: Optional[str], control: Optional[Gtk.Widget], subtitle: Optional[str] = None) -> Gtk.Box:
+def make_row(
+    label_text: str,
+    tooltip: Optional[str],
+    control: Optional[Gtk.Widget],
+    subtitle: Optional[str] = None,
+) -> Gtk.Box:
     outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
     outer.set_margin_top(2)
     outer.set_margin_bottom(2)
@@ -151,16 +156,3 @@ def sep() -> Gtk.Separator:
     s.set_margin_top(8)
     s.set_margin_bottom(8)
     return s
-
-
-def expert_banner() -> Gtk.Box:
-    box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-    box.set_margin_top(4)
-    box.set_margin_bottom(4)
-    box.set_margin_start(4)
-    box.set_margin_end(4)
-    lbl = Gtk.Label(label="⚙  Expert options")
-    lbl.add_css_class("heading")
-    lbl.set_halign(Gtk.Align.START)
-    box.append(lbl)
-    return box
