@@ -1,6 +1,7 @@
 import gi
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk
+gi.require_version("Adw", "1")
+from gi.repository import Gtk, Adw
 from runner import run
 from widgets import page_title, section_title, sep, status_label, card, make_row, expert_banner
 
@@ -22,6 +23,14 @@ GPU_MODES = [
     ),
 ]
 
+# Transitions that require logout
+NEEDS_LOGOUT = {
+    ("Hybrid", "Integrated"),
+    ("AsusMuxDgpu", "Integrated"),
+    ("Integrated", "Hybrid"),
+    ("Integrated", "AsusMuxDgpu"),
+}
+
 
 def _get_mode():
     out, _ = run("supergfxctl --get")
@@ -36,21 +45,22 @@ class GpuTab(Gtk.Box):
         self.set_margin_start(20)
         self.set_margin_end(20)
         self._expert_widgets = []
+        self._current_mode = _get_mode()
         self._build()
 
     def _build(self):
         self.append(page_title("GPU"))
 
-        notice = Gtk.Label(label="Changing GPU mode requires logging out to take effect.")
-        notice.add_css_class("caption")
-        notice.add_css_class("dim-label")
-        notice.set_halign(Gtk.Align.START)
-        notice.set_wrap(True)
-        self.append(notice)
+        self.notice = Gtk.Label(label="")
+        self.notice.add_css_class("caption")
+        self.notice.add_css_class("dim-label")
+        self.notice.set_halign(Gtk.Align.START)
+        self.notice.set_wrap(True)
+        self.append(self.notice)
+
         self.append(sep())
         self.append(section_title("GPU mode"))
 
-        active = _get_mode()
         group = None
         self._buttons = {}
 
@@ -66,7 +76,7 @@ class GpuTab(Gtk.Box):
                 btn = Gtk.CheckButton()
                 btn.set_group(group)
 
-            btn.set_active(name == active)
+            btn.set_active(name == self._current_mode)
             btn.connect("toggled", self._on_mode, name)
             self._buttons[name] = btn
 
@@ -109,8 +119,7 @@ class GpuTab(Gtk.Box):
         self._dgpu_row = make_row(
             "Disable NVIDIA GPU entirely",
             "Completely powers off the NVIDIA GPU at the BIOS level.\n"
-            "Maximum battery savings. Requires a reboot to take effect.\n"
-            "Only use if you never need NVIDIA — reverts the GPU mode setting.",
+            "Maximum battery savings. Requires a reboot to take effect.",
             dgpu_sw,
             subtitle="Requires reboot. Cannot be used with Hybrid or AsusMuxDgpu modes."
         )
@@ -121,9 +130,7 @@ class GpuTab(Gtk.Box):
         panel_sw.connect("notify::active", self._on_panel_overdrive)
         self._panel_row = make_row(
             "Panel overdrive",
-            "Reduces display motion blur by overdriving pixel transitions.\n"
-            "Makes fast motion cleaner on screen. Slightly increases display power draw.\n"
-            "No visual downside for normal use.",
+            "Reduces display motion blur. Slightly increases display power draw.",
             panel_sw,
             subtitle="Cosmetic display improvement. Safe to enable."
         )
@@ -144,11 +151,54 @@ class GpuTab(Gtk.Box):
             w.set_visible(active)
 
     def _on_mode(self, btn, name):
-        if btn.get_active():
-            _, ok = run(f"supergfxctl --mode {name}")
-            self.status.set_text(
-                f"GPU mode set to {name}. Log out to apply." if ok else "Error setting GPU mode"
+        if not btn.get_active():
+            return
+        if name == self._current_mode:
+            return
+
+        requires_logout = (self._current_mode, name) in NEEDS_LOGOUT
+
+        if requires_logout:
+            dialog = Adw.MessageDialog(
+                transient_for=self.get_root(),
+                heading=f"Switch to {name} mode?",
+                body=(
+                    f"Switching from {self._current_mode} to {name} requires a logout.\n\n"
+                    "Unsaved work will be lost if you log out now."
+                ),
             )
+            dialog.add_response("cancel", "Cancel")
+            dialog.add_response("logout", "Apply and log out now")
+            dialog.set_response_appearance("logout", Adw.ResponseAppearance.DESTRUCTIVE)
+            dialog.set_default_response("logout")
+            dialog.connect("response", self._on_dialog_response, name)
+            dialog.present()
+        else:
+            self._apply_mode(name, logout=False)
+
+    def _on_dialog_response(self, dialog, response, name):
+        if response == "cancel":
+            for n, b in self._buttons.items():
+                b.set_active(n == self._current_mode)
+            return
+        if response == "logout":
+            self._apply_mode(name, logout=True)
+
+    def _apply_mode(self, name, logout=False):
+        _, ok = run(f"supergfxctl --mode {name}")
+        if ok:
+            self._current_mode = name
+            if (self._current_mode, name) in NEEDS_LOGOUT:
+                self.notice.set_text("Log out to fully apply the GPU mode change.")
+            else:
+                self.notice.set_text("")
+            self.status.set_text(f"GPU mode set to {name}.")
+            if logout:
+                run("gnome-session-quit --logout --no-prompt")
+        else:
+            self.status.set_text("Error setting GPU mode.")
+            for n, b in self._buttons.items():
+                b.set_active(n == self._current_mode)
 
     def _on_dgpu_disable(self, sw, param):
         val = "1" if sw.get_active() else "0"
