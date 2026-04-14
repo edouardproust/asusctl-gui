@@ -16,7 +16,6 @@ A simple GTK4 graphical interface for controlling ASUS laptop settings on Linux 
 - **Keyboard** — backlight brightness control
 - **GPU** — switch between Integrated / Hybrid / AsusMuxDgpu modes with smart logout prompts
 - **Fan** — reset fan curves to ASUS defaults per profile
-- **Expert mode** — toggle to reveal advanced options in each tab (fan curves, BIOS charge mode, panel overdrive, dGPU disable)
 
 ## Requirements
 
