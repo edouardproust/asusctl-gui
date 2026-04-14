@@ -38,7 +38,6 @@ The app will appear in the GNOME application menu as **AsusCtl GUI**.
 ## Uninstall
 
 ```bash
-chmod +x uninstall.sh
 ./uninstall.sh
 ```
 
